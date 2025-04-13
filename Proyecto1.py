@@ -7,25 +7,35 @@ mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(max_num_hands=1)
 mp_draw = mp.solutions.drawing_utils
 
-# Variables del objeto
-grabbed = False
-obj_x, obj_y = 300, 200
+# Variables de los objetos
 obj_size = 100
-offset_x, offset_y = 0, 0
+grabbed_obj = None
 
-# Cargar imagen del objeto
-obj_img = cv2.imread("objeto.png", cv2.IMREAD_UNCHANGED)
-if obj_img is None:
-    print("❌ ERROR: No se pudo cargar 'objeto.png'.")
-    exit()
-obj_img = cv2.resize(obj_img, (obj_size, obj_size))
+# Cargar imágenes de los objetos
+def cargar_objeto(path, x, y):
+    img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+    if img is None:
+        print(f"❌ ERROR: No se pudo cargar '{path}'.")
+        exit()
+    img = cv2.resize(img, (obj_size, obj_size))
+    return {
+        "img": img,
+        "x": x,
+        "y": y,
+        "grabbed": False,
+        "offset_x": 0,
+        "offset_y": 0
+    }
 
-# Función segura para superponer imagen con canal alfa
+obj1 = cargar_objeto("objeto.png", 100, 150)
+obj2 = cargar_objeto("objeto1.png", 400, 250)
+objetos = [obj1, obj2]
+
+# Función para superponer imagen con canal alfa
 def overlay_image_alpha(img, img_overlay, x, y):
     h, w = img_overlay.shape[:2]
     ih, iw = img.shape[:2]
 
-    # Ajuste si x o y son negativos
     if x < 0:
         img_overlay = img_overlay[:, -x:]
         w = img_overlay.shape[1]
@@ -34,8 +44,6 @@ def overlay_image_alpha(img, img_overlay, x, y):
         img_overlay = img_overlay[-y:, :]
         h = img_overlay.shape[0]
         y = 0
-
-    # Cortar si se sale del borde
     if x + w > iw:
         w = iw - x
         img_overlay = img_overlay[:, :w]
@@ -48,7 +56,6 @@ def overlay_image_alpha(img, img_overlay, x, y):
 
     overlay_rgb = img_overlay[..., :3]
     alpha = img_overlay[..., 3:] / 255.0
-
     img[y:y+h, x:x+w] = (1.0 - alpha) * img[y:y+h, x:x+w] + alpha * overlay_rgb
     return img
 
@@ -85,24 +92,32 @@ while True:
                 d = distancia(thumb_tip, index_tip)
 
                 if d < 40:
-                    if not grabbed:
-                        grabbed = True
-                        offset_x = index_tip[0] - obj_x
-                        offset_y = index_tip[1] - obj_y
-                    obj_x = index_tip[0] - offset_x
-                    obj_y = index_tip[1] - offset_y
+                    if grabbed_obj is None:
+                        # Intentar agarrar uno de los objetos
+                        for obj in objetos:
+                            dentro = obj["x"] <= index_tip[0] <= obj["x"] + obj_size and obj["y"] <= index_tip[1] <= obj["y"] + obj_size
+                            if dentro:
+                                grabbed_obj = obj
+                                obj["grabbed"] = True
+                                obj["offset_x"] = index_tip[0] - obj["x"]
+                                obj["offset_y"] = index_tip[1] - obj["y"]
+                                break
+                    if grabbed_obj:
+                        grabbed_obj["x"] = index_tip[0] - grabbed_obj["offset_x"]
+                        grabbed_obj["y"] = index_tip[1] - grabbed_obj["offset_y"]
                 else:
-                    grabbed = False
+                    if grabbed_obj:
+                        grabbed_obj["grabbed"] = False
+                        grabbed_obj = None
 
-    # Asegurar que no se salga del frame
-    obj_x = max(0, obj_x)
-    obj_y = max(0, obj_y)
-
-    # Superponer la imagen del objeto
-    frame = overlay_image_alpha(frame, obj_img, obj_x, obj_y)
+    # Dibujar los objetos
+    for obj in objetos:
+        obj["x"] = max(0, obj["x"])
+        obj["y"] = max(0, obj["y"])
+        frame = overlay_image_alpha(frame, obj["img"], obj["x"], obj["y"])
 
     # Mostrar ventana
-    cv2.imshow("Drag & Drop con Gestos", frame)
+    cv2.imshow("Drag & Drop con 2 Objetos", frame)
     if cv2.waitKey(1) & 0xFF == 27:  # ESC
         break
 
